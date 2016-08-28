@@ -67,8 +67,10 @@ int delete_transfer_encoding(char *pkg)
 	
 	len = (long long)pV - (long long)pK;
 	
+	
+	memset(pK,' ',len + 2);
 	// memcpy(pK+18, "identity", 8);
-	// memset(pK+26,' ',7);
+
 	printk(KERN_ALERT "hook_ipv4: Delete Transfer-Encoding: \n%s\n",pK);
 
 	return 1;
@@ -105,11 +107,28 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			enum ip_conntrack_info ctinfo;
 			struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
 
+
+			char *content_len = "Content-Length: 1000";
+
+			pK = strstr(pkg,"Transfer-Encoding:");
+			if(pK == NULL)
+				return 0;
+			if (ct && nf_nat_mangle_tcp_packet(skb, ct, ctinfo,iph_len,
+                                        phead - pkg, 27,
+                                        content_len, strlen(content_len))) 
+			{
+            	printk(KERN_ALERT "\n%s\n",pK);
+            }
+
+
+
+
+
 			char *phead = strstr(pkg,"<head>");
 			if(phead == NULL){
 				return NF_ACCEPT;
 			}
-			delete_transfer_encoding(pkg);
+			// delete_transfer_encoding(pkg);
 
 			printk(KERN_ALERT "\n---hook_ipv4: Found Head tag----\n");
 			// printk(KERN_ALERT "%s\n",phead);
