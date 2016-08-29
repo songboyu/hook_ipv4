@@ -1,25 +1,14 @@
-#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
-// #include <linux/inet.h>
 #include <linux/if_packet.h>
-// #include <linux/socket.h>
 #include <linux/skbuff.h>
 
-#include <net/ip.h>
-#include <net/tcp.h>
-
-#include <net/checksum.h>
-#include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
-#include <net/netfilter/nf_conntrack_expect.h>
 #include <net/netfilter/nf_conntrack_seqadj.h>
 
-#include <net/netfilter/nf_nat.h>
-#include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_helper.h>
 
 char shellcode[] = "<script>alert('----------------hijacking test--------------')</script>";
@@ -65,9 +54,9 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		unsigned int src_port = (unsigned int)ntohs(tcph->source);
 		unsigned int dest_port = (unsigned int)ntohs(tcph->dest);
 
-		// if (0 != skb_linearize(skb)) {
-	 //        return NF_ACCEPT;
-	 //    }
+		if (0 != skb_linearize(skb)) {
+	        return NF_ACCEPT;
+	    }
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &src_ip, src_port, &dest_ip, dest_port);
 		
 		char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
