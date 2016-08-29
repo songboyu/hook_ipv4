@@ -1,6 +1,9 @@
-// netfilter修改HTTP数据包（插入、修改、删除）
+/* netfilter修改HTTP数据包（插入、修改、删除） */
+
 // 测试内核：3.13.0-32-generic
-// 修改数据包长度后3.13可自动修改seq和ack，3.2以及2.68以下内核需要手动hook修改
+// 修改数据包长度后3.13内核可自动修改seq和ack
+// 3.2以及2.68以下内核只是在ct->status中高几位做了标记（IPS_SEQ_ADJUST_BIT），还需要后续手动hook修改
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/netfilter.h>
@@ -223,17 +226,17 @@ static struct nf_hook_ops http_hooks[] = {
 	},
 	// 3.2以及2.68以下内核适用
 	// {
-	// 	.hook		   = fix_seq,
-	// 	.pf			 = PF_INET,
+	// 	.hook		   	= fix_seq,
+	// 	.pf			 	= PF_INET,
 	// 	.hooknum		= NF_INET_PRE_ROUTING,
-	// 	.priority	   = NF_IP_PRI_CONNTRACK_CONFIRM,
+	// 	.priority	   	= NF_IP_PRI_CONNTRACK_CONFIRM,
 	// 	.owner			= THIS_MODULE
 	// },
 	// {
-	// 	.hook		   = fix_seq,
-	// 	.pf			 = PF_INET,
+	// 	.hook		   	= fix_seq,
+	// 	.pf			 	= PF_INET,
 	// 	.hooknum		= NF_INET_POST_ROUTING,
-	// 	.priority	   = NF_IP_PRI_CONNTRACK_CONFIRM,
+	// 	.priority	  	= NF_IP_PRI_CONNTRACK_CONFIRM,
 	// 	.owner			= THIS_MODULE
 	// },
 };
