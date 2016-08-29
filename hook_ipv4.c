@@ -46,9 +46,9 @@ int delete_accept_encoding(char *pkg)
 	
 	len = (long long)pV - (long long)pK;
 	
-	printk(KERN_ALERT "hook_ipv4: Delete Accept-Encoding: %d\n",len);
-	
 	memset(pK,' ',len + 2);
+	printk(KERN_ALERT "hook_ipv4: Delete Accept-Encoding\n");
+	
 	return 1;
 }
 
@@ -116,7 +116,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 				// printk(KERN_ALERT "%d\n", ct->status);
 				// printk(KERN_ALERT "%d\n", ct->ext->offset[NF_CT_EXT_SEQADJ]);
 				// set_bit(IPS_SEQ_ADJUST_BIT, &ct->status);
-            	printk(KERN_ALERT "hook_ipv4: ---insert success---\n");
+            	printk(KERN_ALERT "\nhook_ipv4: ---insert success---\n");
           }
 
 		}
