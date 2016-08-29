@@ -65,13 +65,13 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		unsigned int src_port = (unsigned int)ntohs(tcph->source);
 		unsigned int dest_port = (unsigned int)ntohs(tcph->dest);
 
-		if (0 != skb_linearize(skb)) {
-	        return NF_ACCEPT;
-	    }
+		// if (0 != skb_linearize(skb)) {
+	 //        return NF_ACCEPT;
+	 //    }
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &src_ip, src_port, &dest_ip, dest_port);
 		
-		// char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
-		char *pkg = (char *)skb->data + 40;
+		char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
+		// char *pkg = (char *)skb->data + 40;
 		
 		// printk(KERN_ALERT "---%d->%d\n", src_port,dest_port);
 
@@ -101,7 +101,6 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 			enum ip_conntrack_info ctinfo;
 			struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
-		    // set_bit(IPS_SEQ_ADJUST_BIT, &ct->status);
 
 			// sudo iptables -t nat --list
 			nfct_seqadj_ext_add(ct);
@@ -123,10 +122,10 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		}
 		else if (dest_port == 80)
 		{
-			// // HTTP 1.1 --> HTTP 1.0
-			// char *pK = strstr(pkg,"HTTP/1.1");
-			// if(pK == NULL) return NF_ACCEPT;
-			// memcpy(pK, "HTTP/1.0", 8);
+			// HTTP 1.1 --> HTTP 1.0
+			char *pK = strstr(pkg,"HTTP/1.1");
+			if(pK == NULL) return NF_ACCEPT;
+			memcpy(pK, "HTTP/1.0", 8);
 
 			if (memcmp(pkg,"GET",strlen("GET")) != 0)
 			{
