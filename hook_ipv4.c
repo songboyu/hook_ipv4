@@ -18,7 +18,6 @@
 
 #include <net/netfilter/nf_nat_helper.h>
 
-// 用了 nf_conntrack_tcp_update 函数要用这个遵守 GPL 开放协议才能编译通过 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("songboyu");
 MODULE_DESCRIPTION("modify http payload, base on netfilter");
@@ -46,13 +45,14 @@ int delete_accept_encoding(char *pkg)
 
 	len = (long long)pV - (long long)pK;
 	
+	// 用空格覆盖Accept-Encoding:xxx内存
 	memset(pK,' ',len + 2);
 	printk(KERN_ALERT "hook_ipv4: ---Delete Accept-Encoding---\n");
 	
 	return 1;
 }
 
-// 钩子函数，发送时修改请求头，接受时修改pkg
+// 钩子函数，发送时修改请求头，接收时修改pkg
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
 	// IP数据包frag合并
@@ -75,8 +75,10 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &saddr, sport, &daddr, dport);
 
+		// 接收到的数据包
 		if (sport == 80)
-		{
+		{	
+			// 只处理HTTP请求且请求返回200
 			if (memcmp(pkg,"HTTP/1.0 200", 12) != 0 && memcmp(pkg,"HTTP/1.1 200", 12) != 0)
 			{
 				return NF_ACCEPT;
@@ -97,12 +99,13 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			// 参考：http://bbs.chinaunix.net/thread-1941060-1-1.html
 			// char *tail = skb_put(skb, strlen(shellcode));
 
-			// 数据向后移动，在首部增加shellcode
+			// 原数据整体向后移动
 			// while(tail > phead)
 			// {
 			// 	tail--;
 			// 	*(tail + strlen(shellcode)) = *tail;
 			// }
+			// 在首部增加shellcode
 			// memcpy(phead, shellcode, strlen(shellcode));
 
 			// fix IP hdr checksum information
@@ -138,9 +141,11 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 				printk(KERN_ALERT "hook_ipv4: ---pkg modify success---\n");
 		  	}
 		}
+		// 发出的数据包
 		else if (dport == 80)
 		{
-			// HTTP 1.1 --> HTTP 1.0
+			// 请求头HTTP 1.1 --> HTTP 1.0
+			// 防止收到chunked数据包（Transfer-Encoding： chunked是HTTP 1.1中特有的）
 			char *pK = strstr(pkg,"HTTP/1.1");
 			if(pK == NULL) return NF_ACCEPT;
 			memcpy(pK, "HTTP/1.0", 8);
@@ -216,6 +221,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 // }
 // ==========================================================================
 
+// 钩子函数注册
 static struct nf_hook_ops http_hooks[] = {
 	{ 
 		.hook 			= hook_func,
@@ -241,7 +247,7 @@ static struct nf_hook_ops http_hooks[] = {
 	// },
 };
 
-// 模块挂载
+// 模块加载
 static int init_hook_module(void)
 {
 	nf_register_hooks(http_hooks, ARRAY_SIZE(http_hooks));
