@@ -209,8 +209,8 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 				printk("--------------------------\n");
 				printk("step 4. start send new ack skb\n");
-				// struct ethhdr* eth = (struct ethhdr*)skb->mac_header;
 				
+				// struct ethhdr* eth = (struct ethhdr*)skb->mac_header;
 				// build_dev_xmit_tcp (skb->dev, 
 				// 	eth->h_source, eth->h_dest,
 				// 	NULL, 0, 
