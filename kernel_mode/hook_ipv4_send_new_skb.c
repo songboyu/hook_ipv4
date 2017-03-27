@@ -71,8 +71,8 @@ int build_dev_xmit_tcp (struct net_device* dev,
 	skb_put(skb, sizeof (struct tcphdr));
 	pdata = skb_put (skb, pkt_len);
 	{
-	if (NULL != pkt)
-	memcpy (pdata, pkt, pkt_len);
+		if (NULL != pkt)
+		memcpy (pdata, pkt, pkt_len);
 	}
 
 	{

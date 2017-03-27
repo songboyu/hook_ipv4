@@ -6,3 +6,4 @@ Module.symvers
 *.order
 *.cmd
 .tmp_versions
+sftp-config.json
