@@ -1,0 +1,201 @@
+﻿<!DOCTYPE html>
+<html style="height: 100%">
+<head>
+    <meta charset="utf-8">
+    <title>反射式网络数字核弹演示</title>
+</head>
+<body style="height: 100%; margin: 0">
+    <div id="map" style="height: 100%;"></div>
+
+    <script src="source/echarts.min.js"></script>
+    <script src="source/data.js"></script>
+    <script src="source/world.js"></script>
+
+    <script type="text/javascript">
+    var option = {
+        backgroundColor: '#1b1b1b',
+        color: ['gold','aqua','lime'],
+        title : {
+            // text: '反射式数字核弹演示',
+            left: 'center',
+            textStyle : {
+                color: '#fff'
+            }
+        },
+        tooltip : {
+            trigger: 'item',
+            formatter: '{b}'
+        },
+        geo: {
+            map: 'world',
+            left: 10,
+            right: 10,
+            silent: true,
+            label: {
+                emphasis: {
+                    show: false
+                }
+            },
+            roam: false,
+            itemStyle: {
+                normal: {
+                    areaColor: '#1b1b1b',
+                    borderColor: 'rgba(100,149,237,1)'
+                },
+                emphasis: {
+                    areaColor: '#2a333d'
+                }
+            }
+        },
+        dataRange: {
+            min : 0,
+            max : 100,
+            calculable : true,
+            color: ['#ff3333', 'orange', 'yellow','lime','aqua'],
+            show: false
+        },
+        series: [
+            {
+                type: 'lines',
+                coordinateSystem: 'geo',
+                large: true,
+                // largeThreshold: 100,
+                zlevel: 2,
+                effect: {
+                    show: true,
+                    period: 2,
+                    trailLength: 0.6,
+                    // symbol: planePath,
+                    symbolSize: 3,
+                    loop: false
+                },
+                lineStyle: {
+                    normal: {
+                        color: '#d83c3c',
+                        width: 0,
+                        opacity: 0.4,
+                        curveness: 0.2
+                    }
+                },
+                data: []
+                // blendMode: 'lighter'
+            },
+            {
+                type: 'effectScatter',
+                coordinateSystem: 'geo',
+                zlevel: 2,
+                rippleEffect: {
+                    period: 5,
+                    scale: 2,
+                    brushType: 'stroke'
+                },
+                data: []
+            },
+        ]
+    };
+
+    function loadData(direct) {
+        // myChart.clear();
+
+        // option.series[0].data = [];
+        option.series[1].data = [];
+        for (var i = 0; i < data.citys.length; i++){
+            if(i % 2 != 0){
+                continue;
+            }
+            var coords;
+            if(direct == 0){
+                coords = [
+                    [data.citys[i][3], data.citys[i][4]],
+                    [116.23,39.55],
+                ]
+            }else if(direct == 1){
+                coords = [
+                    [116.23,39.55],
+                    [data.citys[i][3], data.citys[i][4]],
+                ]
+            }else if(direct == 2){
+                coords = [
+                    [data.citys[i][3], data.citys[i][4]],
+                    [-77.02,38.53],
+                ]
+            }
+            var lines = {
+                fromName: data.citys[i][1],
+                toName: center,
+                coords: coords
+            };
+            option.series[0].data.push(lines);
+
+            var label;
+            var score;
+            var symbolSize;
+
+            if(data.citys[i][0] == 'Washington DC'){
+                symbolSize = 10;
+                score = 20;
+                label = {
+                    normal: {
+                        show: true,
+                        position: 'right',
+                        formatter: '{b}'
+                    }
+                };
+            }else if(data.citys[i][0] == 'Beijing'){
+                symbolSize = 10;
+                score = 0;
+                label = {
+                    normal: {
+                        show: true,
+                        position: 'right',
+                        formatter: '{b}'
+                    }
+                };
+            }else{
+                symbolSize = (i % 100) / 20;
+                score = i % 100;
+                label = [];
+            }
+
+            var points = {
+                name: data.citys[i][1], 
+                value: [data.citys[i][3], data.citys[i][4], score],
+                label: label,
+                symbolSize: symbolSize,
+            };
+            option.series[1].data.push(points);
+        }
+
+        myChart.setOption(option);
+    }
+    window.onresize = function() {
+        myChart.resize();
+    }
+
+    var myChart = echarts.init(document.getElementById('map'));
+
+    function func0(){
+        option.series[0].lineStyle.normal.color = 'rgba(30,144,255,0.5)';
+        loadData(0);
+        setTimeout("func1()", 3000);
+    }
+    function func1(){
+        option.series[0].lineStyle.normal.color = 'rgba(30,144,255,0.5)';
+        loadData(1);
+        setTimeout("func2()", 3000);
+    }
+    function func2(){
+        option.series[0].lineStyle.normal.color = '#d83c3c';
+        option.series[0].effect.loop = true;
+        // option.series[1].symbolSize = function (v) {
+        //     return v[2] / 10;
+        // };
+        loadData(2);
+        // setTimeout("func0()", 3000);
+    }
+
+    func0();
+    </script>
+</body>
+
+</html>

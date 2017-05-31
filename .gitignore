@@ -1,4 +1,5 @@
 Module.symvers
+.DS_Store
 *.ko
 *.mod.c
 *.mod.o
