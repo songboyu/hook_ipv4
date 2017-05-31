@@ -1,0 +1,10 @@
+.DS_Store
+Module.symvers
+*.ko
+*.mod.c
+*.mod.o
+*.o
+*.order
+*.cmd
+.tmp_versions
+sftp-config.json
